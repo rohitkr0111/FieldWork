@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+:root { color-scheme: light; }
+body { background: #f5f1e9; color: #102a2a; margin: 0; }
+a { text-underline-offset: 4px; }
+button, input, select, textarea { font: inherit; }
+.wrap { width: min(1160px, calc(100% - 40px)); margin-inline: auto; }

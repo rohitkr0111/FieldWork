@@ -1,0 +1,321 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum EnquiryStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL_SENT
+  CONVERTED
+  NOT_INTERESTED
+  CLOSED
+}
+
+model AdminUser {
+  id                     String               @id @default(uuid()) @db.Uuid
+  email                  String               @unique
+  name                   String
+  passwordHash           String
+  mfaSecret              String?
+  mfaEnabled             Boolean              @default(false)
+  mfaEnrollmentTokenHash String?
+  mfaEnrollmentExpiresAt DateTime?
+  active                 Boolean              @default(true)
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  deletedAt              DateTime?
+  roles                  AdminUserRole[]
+  sessions               AdminSession[]
+  passwordResetTokens    PasswordResetToken[]
+  createdProjects        WebsiteProject[]     @relation("ProjectCreator")
+  updatedProjects        WebsiteProject[]     @relation("ProjectUpdater")
+  assignedEnquiries      Enquiry[]            @relation("EnquiryAssignee")
+  notes                  EnquiryNote[]
+  auditLogs              AdminAuditLog[]
+}
+
+model Role {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String           @unique
+  description String?
+  users       AdminUserRole[]
+  permissions RolePermission[]
+  createdAt   DateTime         @default(now())
+}
+
+model Permission {
+  id          String           @id @default(uuid()) @db.Uuid
+  key         String           @unique
+  description String?
+  roles       RolePermission[]
+}
+
+model AdminUserRole {
+  userId String    @db.Uuid
+  roleId String    @db.Uuid
+  user   AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model AdminSession {
+  id         String    @id @default(uuid()) @db.Uuid
+  tokenHash  String    @unique
+  csrfHash   String
+  userId     String    @db.Uuid
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  revokedAt  DateTime?
+  user       AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  tokenHash String    @unique
+  userId    String    @db.Uuid
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model Industry {
+  id          String             @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String             @unique
+  description String?
+  sortOrder   Int                @default(0)
+  active      Boolean            @default(true)
+  deletedAt   DateTime?
+  categories  BusinessCategory[]
+  projects    WebsiteProject[]
+  enquiries   Enquiry[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+}
+
+model BusinessCategory {
+  id          String           @id @default(uuid()) @db.Uuid
+  industryId  String           @db.Uuid
+  name        String
+  slug        String
+  description String?
+  active      Boolean          @default(true)
+  deletedAt   DateTime?
+  industry    Industry         @relation(fields: [industryId], references: [id])
+  projects    WebsiteProject[]
+  enquiries   Enquiry[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([industryId, slug])
+  @@index([industryId, active])
+}
+
+model Client {
+  id           String           @id @default(uuid()) @db.Uuid
+  name         String
+  businessName String?
+  email        String?
+  phone        String?
+  websiteUrl   String?
+  city         String?
+  state        String?
+  addressLine1 String?
+  addressLine2 String?
+  postalCode   String?
+  projects     WebsiteProject[]
+  testimonials Testimonial[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  deletedAt    DateTime?
+}
+
+model WebsiteProject {
+  id               String            @id @default(uuid()) @db.Uuid
+  name             String
+  slug             String            @unique
+  clientId         String?           @db.Uuid
+  industryId       String            @db.Uuid
+  categoryId       String?           @db.Uuid
+  shortDescription String
+  fullDescription  String?
+  liveUrl          String
+  thumbnailId      String?           @db.Uuid
+  status           ProjectStatus     @default(DRAFT)
+  featured         Boolean           @default(false)
+  displayOrder     Int               @default(0)
+  seoTitle         String?
+  seoDescription   String?
+  createdById      String?           @db.Uuid
+  updatedById      String?           @db.Uuid
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
+  client           Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  industry         Industry          @relation(fields: [industryId], references: [id])
+  category         BusinessCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  thumbnail        MediaAsset?       @relation("ProjectThumbnail", fields: [thumbnailId], references: [id], onDelete: SetNull)
+  images           ProjectImage[]
+  features         ProjectFeature[]
+  tags             ProjectTag[]
+  creator          AdminUser?        @relation("ProjectCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updater          AdminUser?        @relation("ProjectUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  enquiries        Enquiry[]
+
+  @@index([status, featured, displayOrder])
+  @@index([industryId, categoryId, status])
+}
+
+model ProjectImage {
+  id        String         @id @default(uuid()) @db.Uuid
+  projectId String         @db.Uuid
+  mediaId   String         @db.Uuid
+  altText   String
+  sortOrder Int            @default(0)
+  project   WebsiteProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  media     MediaAsset     @relation(fields: [mediaId], references: [id])
+
+  @@unique([projectId, mediaId])
+  @@index([projectId, sortOrder])
+}
+
+model ProjectFeature {
+  id        String         @id @default(uuid()) @db.Uuid
+  projectId String         @db.Uuid
+  label     String
+  sortOrder Int            @default(0)
+  project   WebsiteProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ProjectTag {
+  id        String         @id @default(uuid()) @db.Uuid
+  projectId String         @db.Uuid
+  value     String
+  project   WebsiteProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, value])
+}
+
+model Testimonial {
+  id          String    @id @default(uuid()) @db.Uuid
+  clientId    String?   @db.Uuid
+  authorName  String
+  authorTitle String?
+  quote       String
+  rating      Int?
+  approved    Boolean   @default(false)
+  featured    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  client      Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@index([approved, featured])
+}
+
+model Enquiry {
+  id             String            @id @default(uuid()) @db.Uuid
+  reference      String            @unique
+  name           String
+  email          String
+  phone          String
+  businessName   String?
+  city           String?
+  state          String?
+  addressLine1   String?
+  postalCode     String?
+  industryId     String?           @db.Uuid
+  categoryId     String?           @db.Uuid
+  projectId      String?           @db.Uuid
+  budgetRange    String?
+  message        String
+  contactConsent Boolean
+  assignedToId   String?           @db.Uuid
+  status         EnquiryStatus     @default(NEW)
+  followUpAt     DateTime?
+  source         String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  project        WebsiteProject?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  industry       Industry?         @relation(fields: [industryId], references: [id], onDelete: SetNull)
+  category       BusinessCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  assignedTo     AdminUser?        @relation("EnquiryAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  notes          EnquiryNote[]
+
+  @@index([status, createdAt])
+  @@index([assignedToId, status])
+}
+
+model EnquiryNote {
+  id        String    @id @default(uuid()) @db.Uuid
+  enquiryId String    @db.Uuid
+  authorId  String    @db.Uuid
+  body      String
+  createdAt DateTime  @default(now())
+  enquiry   Enquiry   @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  author    AdminUser @relation(fields: [authorId], references: [id])
+}
+
+model MediaAsset {
+  id                String           @id @default(uuid()) @db.Uuid
+  publicId          String           @unique
+  secureUrl         String
+  format            String
+  width             Int?
+  height            Int?
+  bytes             Int
+  altText           String?
+  createdAt         DateTime         @default(now())
+  projectThumbnails WebsiteProject[] @relation("ProjectThumbnail")
+  projectImages     ProjectImage[]
+}
+
+model AdminAuditLog {
+  id        String     @id @default(uuid()) @db.Uuid
+  actorId   String?    @db.Uuid
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime   @default(now())
+  actor     AdminUser? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+model SiteSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
